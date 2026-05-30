@@ -273,7 +273,7 @@ function isValid(combo){
   return true;
 }
 
-// ── 핵심: Top15 풀에서 필터 통과 조합 최대 10개 ──
+// ── 핵심: Top15 풀 + 휠 시스템 균등분산 최대 10개 ──
 function generateTop15(twNums, probs){
   // 이번주 유효번호 (0% 제외)
   const twValid=twNums.filter(n=>probs[n]>0).sort((a,b)=>probs[b]-probs[a]);
@@ -283,36 +283,61 @@ function generateTop15(twNums, probs){
   const nonTw=[...Array(45)].map((_,i)=>i+1).filter(n=>!twNums.includes(n))
     .sort((a,b)=>probs[b]-probs[a]);
 
-  // Top15 풀 구성
+  // Top15 풀: 이번주 유효번호 + 나머지 상위 9개 (빠진 자리 보충)
   const needExtra=9+twExclCnt;
   const pool=[...twValid,...nonTw.slice(0,needExtra)];
 
-  // 조합 순열 탐색 (확률 높은 순)
+  // ── 휠 시스템: 번호를 균등 분산 ──
+  // 10조합 × 6개 / 15번호 = 번호당 평균 4회 포함
   const results=[]; const usedKeys=new Set();
+  const numCount={};
+  pool.forEach(n=>numCount[n]=0);
 
-  // pool에서 6개 조합을 확률 높은 순서대로 탐색
-  // combinations 탐색 (최대 10개 찾으면 중단)
-  const n=pool.length;
-  outer: for(let a=0;a<n-5;a++)
-    for(let b=a+1;b<n-4;b++)
-      for(let c=b+1;c<n-3;c++)
-        for(let d=c+1;d<n-2;d++)
-          for(let e=d+1;e<n-1;e++)
-            for(let f=e+1;f<n;f++){
-              if(results.length>=10) break outer;
-              const combo=[pool[a],pool[b],pool[c],pool[d],pool[e],pool[f]].sort((a,b)=>a-b);
-              const key=combo.join(',');
-              if(usedKeys.has(key)) continue;
-              if(!isValid(combo)) continue;
-              usedKeys.add(key);
-              const score=combo.reduce((a,n)=>a+(probs[n]||0),0)/6;
-              const twCnt=combo.filter(n=>twNums.includes(n)).length;
-              results.push({combo,score,twCnt});
-            }
+  let attempts=0;
+  while(results.length<10 && attempts<30000){
+    attempts++;
+
+    // 덜 쓰인 번호 우선, 같으면 확률 높은 번호 우선
+    const sorted=[...pool].sort((a,b)=>{
+      const diff=numCount[a]-numCount[b];
+      if(diff!==0) return diff;
+      return (probs[b]||0)-(probs[a]||0);
+    });
+
+    // 상위 6개로 조합 시도
+    const pick=sorted.slice(0,6);
+    const combo=[...pick].sort((a,b)=>a-b);
+    const key=combo.join(',');
+
+    if(!usedKeys.has(key) && isValid(combo)){
+      usedKeys.add(key);
+      combo.forEach(n=>{ if(numCount[n]!==undefined) numCount[n]++; });
+      results.push({
+        combo, score:combo.reduce((a,n)=>a+(probs[n]||0),0)/6,
+        twCnt:combo.filter(n=>twNums.includes(n)).length
+      });
+      continue;
+    }
+
+    // 안되면 6번째 자리를 다른 번호로 교체
+    let found=false;
+    for(let i=6;i<sorted.length&&!found;i++){
+      const tryCombo=[...sorted.slice(0,5),sorted[i]].sort((a,b)=>a-b);
+      const tryKey=tryCombo.join(',');
+      if(!usedKeys.has(tryKey) && isValid(tryCombo)){
+        usedKeys.add(tryKey);
+        tryCombo.forEach(n=>{ if(numCount[n]!==undefined) numCount[n]++; });
+        results.push({
+          combo:tryCombo, score:tryCombo.reduce((a,n)=>a+(probs[n]||0),0)/6,
+          twCnt:tryCombo.filter(n=>twNums.includes(n)).length
+        });
+        found=true;
+      }
+    }
+  }
 
   return results;
 }
-
 // ── 그리드 렌더 ──
 function renderGrid(probs, twNums){
   const vals=Object.values(probs).filter(v=>v>0);
