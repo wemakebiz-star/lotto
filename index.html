@@ -259,6 +259,8 @@ function calcPatterns(draws){
 }
 
 function isValid(combo){
+  // 이번주 번호 3개 이상 포함 제외
+  if(combo.filter(n=>thisWeekNums.includes(n)).length>=3) return false;
   const s=combo.reduce((a,v)=>a+v,0);
   if(s<PAT.sumMin||s>PAT.sumMax) return false;
   const sorted=[...combo].sort((a,b)=>a-b);
